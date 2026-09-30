@@ -1,0 +1,250 @@
+﻿@page "/create-support"
+@using System.ComponentModel.DataAnnotations
+@using Models
+@using Services
+@using Microsoft.Azure.Cosmos
+@inject ICosmosDbService CosmosDbService
+
+@rendermode InteractiveServer
+
+<PageTitle>Opret supporthenvendelse</PageTitle>
+
+<h1>Opret supporthenvendelse</h1>
+
+<p>
+    Udfyld formularen for at oprette en ny supporthenvendelse.
+</p>
+
+@if (!string.IsNullOrWhiteSpace(successMessage))
+{
+    <div class="alert alert-success" role="alert">
+        @successMessage
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">
+        @errorMessage
+    </div>
+}
+
+<EditForm Model="formModel"
+          OnValidSubmit="CreateSupportMessageAsync"
+          FormName="create-support-form">
+
+    <DataAnnotationsValidator />
+
+    <ValidationSummary class="text-danger mb-3" />
+
+    <div class="mb-3">
+        <label for="name" class="form-label">
+            Navn
+        </label>
+
+        <InputText id="name"
+                   class="form-control"
+                   @bind-Value="formModel.Name" />
+
+        <ValidationMessage For="@(() => formModel.Name)"
+                           class="text-danger" />
+    </div>
+
+    <div class="mb-3">
+        <label for="email" class="form-label">
+            E-mail
+        </label>
+
+        <InputText id="email"
+                   type="email"
+                   class="form-control"
+                   @bind-Value="formModel.Email" />
+
+        <ValidationMessage For="@(() => formModel.Email)"
+                           class="text-danger" />
+    </div>
+
+    <div class="mb-3">
+        <label for="phone" class="form-label">
+            Telefonnummer
+        </label>
+
+        <InputText id="phone"
+                   type="tel"
+                   class="form-control"
+                   @bind-Value="formModel.Phone" />
+
+        <ValidationMessage For="@(() => formModel.Phone)"
+                           class="text-danger" />
+    </div>
+
+    <div class="mb-3">
+        <label for="category" class="form-label">
+            Kategori
+        </label>
+
+        <InputSelect id="category"
+                     class="form-select"
+                     @bind-Value="formModel.Category">
+
+            <option value="">Vælg kategori</option>
+            <option value="Technical question">
+                Technical question
+            </option>
+            <option value="Question about purchase">
+                Question about purchase
+            </option>
+            <option value="Complaint">
+                Complaint
+            </option>
+            <option value="Other">
+                Other
+            </option>
+        </InputSelect>
+
+        <ValidationMessage For="@(() => formModel.Category)"
+                           class="text-danger" />
+    </div>
+
+    <div class="mb-3">
+        <label for="description" class="form-label">
+            Beskrivelse
+        </label>
+
+        <InputTextArea id="description"
+                       class="form-control"
+                       rows="6"
+                       @bind-Value="formModel.Description" />
+
+        <ValidationMessage For="@(() => formModel.Description)"
+                           class="text-danger" />
+    </div>
+
+    <button type="submit"
+            class="btn btn-primary"
+            disabled="@isSubmitting">
+
+        @if (isSubmitting)
+        {
+            <span class="spinner-border spinner-border-sm me-2"
+                  aria-hidden="true">
+            </span>
+
+            <span>Opretter...</span>
+        }
+        else
+        {
+            <span>Opret henvendelse</span>
+        }
+    </button>
+</EditForm>
+
+@code {
+    private SupportMessageFormModel formModel = new();
+
+    private bool isSubmitting;
+    private string? successMessage;
+    private string? errorMessage;
+
+    private async Task CreateSupportMessageAsync()
+    {
+        isSubmitting = true;
+        successMessage = null;
+        errorMessage = null;
+
+        try
+        {
+            //bygger supportMessage ud fra formmodellem i bunden
+            var supportMessage = new SupportMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                DateTime = DateTime.UtcNow,
+                Category = formModel.Category,
+                Description = formModel.Description,
+                Customer = new Customer
+                {
+                    Name = formModel.Name,
+                    Email = formModel.Email,
+                    Phone = formModel.Phone
+                }
+            };
+
+            
+            SupportMessage CreatedMessage = await CosmosDbService.CreateSupportMessageAsync(
+                supportMessage);
+
+            successMessage =
+                $"Henvendelsen blev oprettet med id " +
+                $"'{CreatedMessage.Id}'.";
+
+            formModel = new SupportMessageFormModel();
+        }
+        //fanger fejl besker fra cosmosdb og skriver dem ud på skærmen og i consolen
+        catch (CosmosException exception)
+        {
+            errorMessage =
+                $"Cosmos DB kunne ikke gemme henvendelsen. " +
+                $"Statuskode: {(int)exception.StatusCode} " +
+                $"({exception.StatusCode}). " +
+                $"Fejl: {exception.Message}";
+                
+                Console.WriteLine("COSMOS DB ERROR:");
+                Console.WriteLine(exception.ToString());
+                Console.WriteLine($"SubStatusCode: {exception.SubStatusCode}");
+                Console.WriteLine($"ActivityId: {exception.ActivityId}");
+                Console.WriteLine($"Diagnostics: {exception.Diagnostics}");
+        }
+        //fanger system fejl (står i consolen)
+        catch (Exception)
+        {
+            errorMessage =
+                "Der opstod en uventet fejl. " +
+                "Henvendelsen blev ikke oprettet.";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private sealed class SupportMessageFormModel
+    {
+        [Required(ErrorMessage = "Du skal indtaste dit navn.")]
+        [StringLength(
+            100,
+            ErrorMessage = "Navnet må højst indeholde 100 tegn.")]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(
+            ErrorMessage = "Du skal indtaste din e-mailadresse.")]
+        [EmailAddress(
+            ErrorMessage = "Indtast en gyldig e-mailadresse.")]
+        [StringLength(
+            254,
+            ErrorMessage = "E-mailadressen er for lang skal være max 254 tegn.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(
+            ErrorMessage = "Du skal indtaste dit telefonnummer.")]
+        [Phone(
+            ErrorMessage = "Indtast et gyldigt telefonnummer.")]
+        [StringLength(
+            10,
+            MinimumLength = 8,
+            ErrorMessage =
+            "Telefonnummeret skal være mellem 8 og 10 tegn.")]
+        public string Phone { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Du skal vælge en kategori.")]
+        public string Category { get; set; } = string.Empty;
+
+        [Required(
+            ErrorMessage = "Du skal indtaste en beskrivelse.")]
+        [StringLength(
+            2000,
+            MinimumLength = 0,
+            ErrorMessage =
+                "Beskrivelsen skal være mellem 0 og 2000 tegn.")]
+        public string Description { get; set; } = string.Empty;
+    }
+}

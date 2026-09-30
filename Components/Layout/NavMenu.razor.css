@@ -103,3 +103,10 @@
         overflow-y: auto;
     }
 }
+.nav-item ::deep .nav-link {
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    width: max-content;
+    min-width: 100%;
+}

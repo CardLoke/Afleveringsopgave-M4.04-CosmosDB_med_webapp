@@ -1,0 +1,175 @@
+﻿@page "/support-list"
+@using Models
+@using Services
+@using Microsoft.Azure.Cosmos
+@inject ICosmosDbService CosmosDbService
+
+@rendermode InteractiveServer
+
+<PageTitle>Supporthenvendelser</PageTitle>
+
+<h1>Supporthenvendelser</h1>
+
+<p class="text-muted">
+    Oversigt over henvendelser indsendt af kunder.
+</p>
+
+@if (isLoading)
+{
+    <div class="d-flex align-items-center" role="status">
+        <div class="spinner-border spinner-border-sm me-2"
+             aria-hidden="true">
+        </div>
+
+        <span>Henter supporthenvendelser...</span>
+    </div>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">
+        <strong>Henvendelserne kunne ikke hentes.</strong>
+        <div>@errorMessage</div>
+    </div>
+
+    <button class="btn btn-outline-primary"
+            @onclick="LoadSupportMessagesAsync">
+        Prøv igen
+    </button>
+}
+else if (supportMessages.Count == 0)
+{
+    <div class="alert alert-info" role="status">
+        Der er endnu ikke indsendt nogen supporthenvendelser.
+    </div>
+}
+else
+{
+    <div class="mb-3">
+        <strong>Antal henvendelser:</strong>
+        @supportMessages.Count
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th scope="col">Dato</th>
+                    <th scope="col">Kategori</th>
+                    <th scope="col">Kunde</th>
+                    <th scope="col">E-mail</th>
+                    <th scope="col">Telefon</th>
+                    <th scope="col">Beskrivelse</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                @foreach (SupportMessage message in supportMessages)
+                {
+                    <tr>
+                        <td class="text-nowrap">
+                            @FormatDateTime(message.DateTime)
+                        </td>
+
+                        <td>
+                            @message.Category
+                        </td>
+
+                        <td>
+                            @message.Customer?.Name
+                        </td>
+
+                        <td>
+                            @message.Customer?.Email
+                        </td>
+
+                        <td>
+                            @message.Customer?.Phone
+                        </td>
+
+                        <td class="description-column">
+                            @message.Description
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<SupportMessage> supportMessages =
+        Array.Empty<SupportMessage>();
+
+    private bool isLoading = true;
+    private string? errorMessage;
+    //after first render gør at siden loades først og derefter henter tabellen via functionen LoadSupportMessagesAsync();
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+        await LoadSupportMessagesAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadSupportMessagesAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            supportMessages =
+                await CosmosDbService.GetSupportMessagesAsync();
+        }
+        //fanger fejl fra cosmosDB
+        catch (CosmosException exception)
+        {
+            errorMessage =
+                $"Cosmos DB returnerede statuskode " +
+                $"{(int)exception.StatusCode} " +
+                $"({exception.StatusCode}).";
+
+            Console.WriteLine(exception);
+            Console.WriteLine(exception.Diagnostics);
+        }
+        //fanger sytem fejl
+        catch (Exception exception)
+        {
+            errorMessage =
+                "Der opstod en uventet fejl under hentningen.";
+
+            Console.WriteLine(exception);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+    //
+    private static string FormatDateTime(DateTime dateTime)
+    {
+        //check if where is a dateTime (note dateTime is not null it is value so we use default = "01-01-0001 00:00:00" if there is none)
+        if (dateTime == default)
+        {
+            return "Ikke angivet";
+        }
+        //If the DateTime is UTC, convert it to the computer/user's local time, othervise keep it (UTC is the satndard timezone for DateTime)
+        DateTime displayedTime =
+            dateTime.Kind == DateTimeKind.Utc
+                ? dateTime.ToLocalTime()
+                : dateTime;
+
+        return displayedTime.ToString("dd-MM-yyyy HH:mm");
+    }
+}
+
+<style>
+    .description-column {
+        min-width: 250px;
+        max-width: 450px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+</style>
